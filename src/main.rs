@@ -4,20 +4,31 @@ extern crate thiserror;
 extern crate winapi;
 
 pub mod gfx;
-
 pub mod resource;
 pub mod log;
 
 use log::LOGGER;
 
-use crate::resource::Resource;
+extern "system" fn gl_debug_message_callback(
+    source: u32, ty: u32, id: u32, severity: u32, length: i32,
+    message: *const std::os::raw::c_char, user_param: *mut std::os::raw::c_void)
+{
+    let _ = (source, ty, id, severity, user_param);
+
+    if severity != gl::DEBUG_SEVERITY_NOTIFICATION {
+        unsafe {
+            let message = std::slice::from_raw_parts(message as *const u8, length as usize);
+            let message = std::str::from_utf8(message).expect("bad opengl error message");
+            LOGGER().a.debug(message);
+        }
+    }
+}
 
 fn main() {
     match LOGGER().a.set_log_path("debug.log") {
         Err(e) => LOGGER().a.error(&e),
         _ => {}
     }
-    LOGGER().a.debug("Hello!");
 
     let sdl = sdl2::init().unwrap();
     let video_subsys = sdl.video().unwrap();
@@ -35,7 +46,7 @@ fn main() {
         .unwrap();
     
     let _gl_context = window.gl_create_context().unwrap();
-    let _gl = gl::load_with(|s| video_subsys.gl_get_proc_address(s) as *const std::os::raw::c_void);
+    let _gl = gl::load_with(|s| video_subsys.gl_get_proc_address(s) as *const _);
 
     let mut vendor_info: String = ("").to_owned();
     vendor_info.push_str(
@@ -50,6 +61,13 @@ fn main() {
         }
     );
     LOGGER().a.info(&vendor_info);
+
+    unsafe {
+        gl::Enable(gl::DEBUG_OUTPUT);
+        gl::Enable(gl::DEBUG_OUTPUT_SYNCHRONOUS);
+        gl::DebugMessageCallback(Some(gl_debug_message_callback), std::ptr::null());
+        gl::DebugMessageControl(gl::DONT_CARE, gl::DONT_CARE, gl::DONT_CARE, 0, std::ptr::null(), gl::TRUE);
+    }
     
     let mut viewport = gfx::Viewport::make_viewport(640, 480);
     
@@ -57,7 +75,7 @@ fn main() {
         gl::ClearColor(0.3, 0.3, 0.5, 1.0);
     }
 
-    let res = Resource::from_relative_exe_path(std::path::Path::new("assets")).unwrap();
+    let res = resource::Resource::from_relative_exe_path(std::path::Path::new("assets")).unwrap();
     let program = gfx::Program::from_res(&res, "shaders/test").unwrap();
     
     let vertices: Vec<f32> = vec![

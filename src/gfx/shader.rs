@@ -1,4 +1,4 @@
-use crate::Resource;
+use crate::resource::Resource;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
