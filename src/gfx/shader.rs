@@ -1,4 +1,3 @@
-use gl;
 use crate::Resource;
 
 #[derive(thiserror::Error, Debug)]
@@ -54,7 +53,7 @@ impl Program {
 
     pub fn from_shaders(shaders: &[Shader]) -> Result<Program, String> {
         let program_id = unsafe { gl::CreateProgram() };
-
+        
         for shader in shaders {
             unsafe { gl::AttachShader(program_id, shader.id()); }
         }

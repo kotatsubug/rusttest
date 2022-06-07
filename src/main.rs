@@ -1,14 +1,24 @@
 extern crate gl;
 extern crate sdl2;
 extern crate thiserror;
+extern crate winapi;
 
 pub mod gfx;
 
 pub mod resource;
+pub mod log;
+
+use log::LOGGER;
 
 use crate::resource::Resource;
 
 fn main() {
+    match LOGGER().a.set_log_path("debug.log") {
+        Err(e) => LOGGER().a.error(&e),
+        _ => {}
+    }
+    LOGGER().a.debug("Hello!");
+
     let sdl = sdl2::init().unwrap();
     let video_subsys = sdl.video().unwrap();
 
@@ -18,7 +28,7 @@ fn main() {
     gl_attr.set_context_version(4, 3);
 
     let window = video_subsys
-        .window("Game", 640, 480)
+        .window("WINDOW_TITLE", 640, 480)
         .opengl()
         .resizable()
         .build()
@@ -26,9 +36,24 @@ fn main() {
     
     let _gl_context = window.gl_create_context().unwrap();
     let _gl = gl::load_with(|s| video_subsys.gl_get_proc_address(s) as *const std::os::raw::c_void);
+
+    let mut vendor_info: String = ("").to_owned();
+    vendor_info.push_str(
+        unsafe {
+            std::ffi::CStr::from_ptr(gl::GetString(gl::VENDOR) as *const i8).to_str().unwrap()
+        }
+    );
+    vendor_info.push_str(" ");
+    vendor_info.push_str(
+        unsafe {
+            std::ffi::CStr::from_ptr(gl::GetString(gl::RENDERER) as *const i8).to_str().unwrap()
+        }
+    );
+    LOGGER().a.info(&vendor_info);
+    
+    let mut viewport = gfx::Viewport::make_viewport(640, 480);
     
     unsafe {
-        gl::Viewport(0, 0, 640, 480);
         gl::ClearColor(0.3, 0.3, 0.5, 1.0);
     }
 
@@ -77,6 +102,12 @@ fn main() {
                 sdl2::event::Event::Quit {..} => {
                     break 'main_loop;
                 }
+                sdl2::event::Event::Window {
+                    win_event: sdl2::event::WindowEvent::Resized(w, h), ..
+                } => {
+                    viewport.update_size(w, h);
+                    viewport.use_viewport();
+                }
                 _ => {},
             }
         }
@@ -97,4 +128,6 @@ fn main() {
 
         window.gl_swap_window();
     }
+
+    LOGGER().a.flush().unwrap();
 }
