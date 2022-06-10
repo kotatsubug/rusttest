@@ -1,3 +1,4 @@
+use crate::log::LOGGER;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -7,6 +8,49 @@ pub enum Error {
     },
 }
 
+#[derive(Copy, Clone, Debug)]
+#[repr(C, packed)]
+pub struct f32_f32_f32 {
+    pub d0: f32,
+    pub d1: f32,
+    pub d2: f32,
+}
+
+impl f32_f32_f32 {
+    pub fn new(d0: f32, d1: f32, d2: f32) -> f32_f32_f32 {
+        f32_f32_f32{ d0, d1, d2 }
+    }
+}
+
+impl From<(f32, f32, f32)> for f32_f32_f32 {
+    fn from(other: (f32, f32, f32)) -> Self {
+        f32_f32_f32::new(other.0, other.1, other.2)
+    }
+}
+
+#[derive(Copy, Clone, Debug)]
+#[repr(C, packed)]
+pub struct Vertex {
+    pub pos: f32_f32_f32,
+    pub color: f32_f32_f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct Mesh {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+}
+
+impl Mesh {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Mesh {
+        Mesh{
+            vertices: vertices,
+            indices: indices,
+        }
+    }
+}
+
+#[allow(dead_code)]
 #[repr(C, packed)]
 struct DrawArraysIndirectCmd {
     count: gl::types::GLuint,
@@ -15,6 +59,7 @@ struct DrawArraysIndirectCmd {
     base_instance: gl::types::GLuint,
 }
 
+#[allow(dead_code)]
 #[repr(C, packed)]
 struct DrawElementsIndirectCmd {
     count: gl::types::GLuint,          // # elements (i.e. indices)
@@ -43,13 +88,12 @@ struct DrawElementsIndirectCmd {
 /// of meshes with individual transforms (like physics debris!), it's a lot less expensive to just use a new
 /// multidraw instead of the alternative, that being mapping a buffer and then, very dangerously, manually
 /// streaming new vertex data through a ring buffer, synchronizing updates when needed.
-/// 
 pub struct Batch {
     program_id: gl::types::GLuint,
-    // mesh: Mesh,
+    mesh: Mesh,
 
-    draw_commands: DrawElementsIndirectCmd,
-    // transforms: Vec<Transform>
+    draw_commands: Vec<DrawElementsIndirectCmd>,
+    transforms: Vec<glam::Mat4>,
 
     vao: gl::types::GLuint,         // vertex array object
     vbo: gl::types::GLuint,         // vertex buffer object
@@ -60,15 +104,11 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn make_batch(program: gl::types::GLuint, mesh: Mesh, transforms: Vec<Transform>) -> Result<Batch, Error> {
-        unsafe { gl::UseProgram(program); } // TODO: clean this up
-
-        // Fill up draw commands, draw IDs, ...
-
-        // ...
-
-        // TODO: use DSA methods -- would be slightly faster here but
-        // it would require some bindless fiddling with the array objects
+    pub fn new(program: gl::types::GLuint, mesh: Mesh, transforms: Vec<glam::Mat4>) -> Result<Batch, Error> {
+        // TODO: probably a cleaner way, maybe by borrowing Program
+        unsafe {
+            gl::UseProgram(program);
+        }
 
         let mut vao: gl::types::GLuint = 0;
         let mut vbo: gl::types::GLuint = 0;
@@ -76,6 +116,27 @@ impl Batch {
         let mut idbo: gl::types::GLuint = 0;
         let mut drawidbo: gl::types::GLuint = 0;
         let mut transformbo: gl::types::GLuint = 0;
+
+        let mut drawids: Vec<gl::types::GLuint> = Vec::with_capacity(transforms.len());
+        for i in 0..transforms.len() {
+            drawids.push(i as u32);
+        }
+
+        let mut draw_commands: Vec<DrawElementsIndirectCmd> = Vec::with_capacity(transforms.len());
+        for i in 0..transforms.len() {
+            draw_commands.push(
+                DrawElementsIndirectCmd {
+                    count: mesh.indices.len() as u32,
+                    instance_count: 1,
+                    first_index: 0,
+                    base_vertex: 0,
+                    base_instance: i as u32,
+                }
+            );
+        }
+
+        // TODO: use DSA methods -- would be slightly faster here but
+        // it would require some bindless fiddling with the array objects
 
         unsafe {
             gl::GenVertexArrays(1, &mut vao);
@@ -85,8 +146,8 @@ impl Batch {
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (vertices.len() * std::mem::size_of::<Vert>()) as gl::types::GLsizeiptr,
-                vertices.as_ptr() as *const gl::types::GLvoid,
+                (mesh.vertices.len() * std::mem::size_of::<Vertex>()) as gl::types::GLsizeiptr,
+                mesh.vertices.as_ptr() as *const gl::types::GLvoid,
                 gl::STATIC_DRAW,
             );
 
@@ -133,8 +194,8 @@ impl Batch {
             gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, idxbo);
             gl::BufferData(
                 gl::ELEMENT_ARRAY_BUFFER,
-                (indices.len() * std::mem::size_of::<gl::types::GLuint>()) as gl::types::GLsizeiptr,
-                indices.as_ptr() as *const gl::types::GLvoid,
+                (mesh.indices.len() * std::mem::size_of::<gl::types::GLuint>()) as gl::types::GLsizeiptr,
+                mesh.indices.as_ptr() as *const gl::types::GLvoid,
                 gl::STATIC_DRAW,
             );
 
@@ -144,7 +205,7 @@ impl Batch {
             gl::BufferData(
                 gl::SHADER_STORAGE_BUFFER,
                 (transforms.len() * 16 * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr,
-                transforms[0].as_ptr() as *const gl::types::GLvoid,
+                (&transforms[0].to_cols_array()).as_ptr() as *const gl::types::GLvoid, // FIXME: does the whole Vec need .to_cols_array() ?
                 gl::DYNAMIC_DRAW,
             );
             
@@ -156,17 +217,18 @@ impl Batch {
                 draw_commands.as_ptr() as *const gl::types::GLvoid,
                 gl::DYNAMIC_DRAW,
             );
-
-            // TODO: This should be logged instead!
-            //let error = gl::GetError();
-            //if error != gl::NO_ERROR {
-            //    return Err(Error::OpenGLError{ flag: error });
-            //}
+            
+            let error = gl::GetError();
+            if error != gl::NO_ERROR {
+                LOGGER().a.error(format!("OpenGL error {}", error).as_str());
+            }
         }
         
         Ok(Batch {
             program_id: program,
             mesh: mesh,
+            transforms: transforms,
+
             draw_commands: draw_commands,
             vao: vao,
             vbo: vbo,
@@ -176,30 +238,45 @@ impl Batch {
             transformbo: transformbo,
         })
     }
-
+    
     pub fn draw(&self) {
         unsafe {
-            gl::UseProgram(program_id);
-            gl::BindVertexArray(vao);
-            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, transformbo);
-            gl::BindBuffer(gl::DRAW_INDIRECT_BUFFER, idbo);
+            gl::UseProgram(self.program_id);
+            gl::BindVertexArray(self.vao);
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.transformbo);
+            gl::BindBuffer(gl::DRAW_INDIRECT_BUFFER, self.idbo);
             gl::MultiDrawElementsIndirect(
                 gl::TRIANGLES,
                 gl::UNSIGNED_INT,
-                (GLvoid*)0, draw_commands.size(),
+                std::ptr::null(),
+                self.draw_commands.len() as gl::types::GLsizei,
                 0,
             );
         }
     }
 
-    pub fn set_transform(&self, index: u32, transform: &NDArray<f32, 2>) {
+    pub fn set_transform(&mut self, index: usize, transform: glam::Mat4) {
+        self.transforms[index] = transform;
         unsafe {
-            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, transformbo);
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.transformbo);
             gl::BufferSubData(
                 gl::SHADER_STORAGE_BUFFER,
-                sizeof(float)*16*index,
-                sizeof(float)*16,
-                &*transform_in.begin()
+                (std::mem::size_of::<f32>() * 16 * index as usize) as gl::types::GLintptr,
+                (std::mem::size_of::<f32>() * 16) as gl::types::GLsizeiptr,
+                (&self.transforms[index].to_cols_array()).as_ptr() as *const gl::types::GLvoid
+            );
+        }
+    }
+
+    pub fn set_all_transforms(&mut self, transforms: &[glam::Mat4]) {
+        self.transforms = transforms.to_vec();
+        unsafe {
+            gl::BindBuffer(gl::SHADER_STORAGE_BUFFER, self.transformbo);
+            gl::BufferSubData(
+                gl::SHADER_STORAGE_BUFFER,
+                0,
+                (std::mem::size_of::<f32>() * 16 * self.transforms.len()) as gl::types::GLsizeiptr,
+                self.transforms.as_ptr() as *const gl::types::GLvoid
             );
         }
     }
@@ -213,7 +290,8 @@ impl Drop for Batch {
             gl::DeleteBuffers(1, &mut self.idxbo);
             gl::DeleteBuffers(1, &mut self.drawidbo);
             gl::DeleteBuffers(1, &mut self.vbo);
-            gl::DeleteVertexArrays(1, &mut self.vao); // Attributes are bound to the VAO
+            gl::DeleteVertexArrays(1, &mut self.vao); // attributes are bound to the VAO, remove them
+
             // Shader program deletion done externally, other batches could be sharing it
         }
     }

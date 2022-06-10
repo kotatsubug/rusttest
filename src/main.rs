@@ -2,8 +2,10 @@ extern crate gl;
 extern crate sdl2;
 extern crate thiserror;
 extern crate winapi;
+extern crate glam;
 
 pub mod gfx;
+pub mod math;
 pub mod resource;
 pub mod log;
 
@@ -47,8 +49,8 @@ fn main() {
     
     let _gl_context = window.gl_create_context().unwrap();
     let _gl = gl::load_with(|s| video_subsys.gl_get_proc_address(s) as *const _);
-
-    let mut vendor_info: String = ("").to_owned();
+    
+    let mut vendor_info: String = "".to_owned();
     vendor_info.push_str(
         unsafe {
             std::ffi::CStr::from_ptr(gl::GetString(gl::VENDOR) as *const i8).to_str().unwrap()
@@ -77,41 +79,33 @@ fn main() {
 
     let res = resource::Resource::from_relative_exe_path(std::path::Path::new("assets")).unwrap();
     let program = gfx::Program::from_res(&res, "shaders/test").unwrap();
-    
-    let vertices: Vec<f32> = vec![
-        -0.5, -0.5, 0.0,
-        0.5, -0.5, 0.0,
-        0.0, 0.5, 0.0
+
+    let vertices: Vec<gfx::Vertex> = vec![
+        gfx::Vertex {
+            pos: (0.5, -0.5, 0.0).into(),
+            color: (1.0, 0.0, 1.0).into()
+        },
+        gfx::Vertex {
+            pos: (-0.5, -0.5, 0.0).into(),
+            color: (0.0, 1.0, 1.0).into()
+        },
+        gfx::Vertex {
+            pos: (0.0, 0.5, 0.0).into(),
+            color: (1.0, 1.0, 0.0).into()
+        },
+    ];
+    let indices: Vec<u32> = vec![
+        0, 1, 2
+    ];
+    let mesh = gfx::Mesh::new(vertices, indices);
+    let transforms: Vec<glam::Mat4> = vec![
+        glam::Mat4::IDENTITY,
     ];
 
-    let mut vbo: gl::types::GLuint = 0;
-    unsafe {
-        gl::GenBuffers(1, &mut vbo);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-        gl::BufferData(gl::ARRAY_BUFFER, (vertices.len() * std::mem::size_of::<f32>()) as gl::types::GLsizeiptr, vertices.as_ptr() as *const gl::types::GLvoid, gl::STATIC_DRAW);
-        gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-    }
+    let batch = gfx::Batch::new(program.id(), mesh, transforms).unwrap();
 
-    let mut vao: gl::types::GLuint = 0;
-    unsafe {
-        gl::GenVertexArrays(1, &mut vao);
-    }
-
-    unsafe {
-        gl::BindVertexArray(vao);
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-        gl::EnableVertexAttribArray(0); // this is "layout (location = 0)" in vertex shader
-        gl::VertexAttribPointer(
-            0, // index of the generic vertex attribute ("layout (location = 0)")
-            3, // the number of components per generic vertex attribute
-            gl::FLOAT, // data type
-            gl::FALSE, // normalized (int-to-float conversion)
-            (3 * std::mem::size_of::<f32>()) as gl::types::GLint, // stride (byte offset between consecutive attributes)
-            std::ptr::null() // offset of the first component
-        );
-        gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-        gl::BindVertexArray(0);
-    }
+    let view: glam::Mat4 = glam::Mat4::IDENTITY;
+    let projection: glam::Mat4 = glam::Mat4::IDENTITY;
 
     let mut event_pump = sdl.event_pump().unwrap();
     'main_loop: loop {
@@ -120,9 +114,7 @@ fn main() {
                 sdl2::event::Event::Quit {..} => {
                     break 'main_loop;
                 }
-                sdl2::event::Event::Window {
-                    win_event: sdl2::event::WindowEvent::Resized(w, h), ..
-                } => {
+                sdl2::event::Event::Window { win_event: sdl2::event::WindowEvent::Resized(w, h), .. } => {
                     viewport.update_size(w, h);
                     viewport.use_viewport();
                 }
@@ -135,17 +127,14 @@ fn main() {
         }
 
         program.use_program();
-        unsafe {
-            gl::BindVertexArray(vao);
-            gl::DrawArrays(
-                gl::TRIANGLES,
-                0,
-                3
-            );
-        }
+        
+        program.set_mat4fv("View", view, 0);
+        program.set_mat4fv("Projection", projection, 0);
+
+        batch.draw();
 
         window.gl_swap_window();
     }
-
+    
     LOGGER().a.flush().unwrap();
 }

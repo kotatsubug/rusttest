@@ -88,7 +88,7 @@ impl Logger {
 
     fn set_log_writer_if_not_set(&self) {
         if !self.has_log_writer() {
-            if let Some(path) = self.get_log_path() {
+            if let Some(path) = self.log_path() {
                 let file = match self.open_log_file(&path, LogFileWriteType::Overwrite) {
                     Ok(f) => f,
                     Err(e) => {
@@ -162,7 +162,7 @@ impl Logger {
         Ok(())
     }
 
-    pub fn get_log_path(&self) -> Option<PathBuf> {
+    pub fn log_path(&self) -> Option<PathBuf> {
         (*self.log_path.lock().unwrap()).as_ref().cloned()
     }
 
@@ -175,36 +175,36 @@ impl Logger {
         *self.severity.lock().unwrap() = severity;
     }
 
-    pub fn get_severity(&self) -> Severity {
+    pub fn severity(&self) -> Severity {
         *self.severity.lock().unwrap()
     }
 
     pub fn debug(&self, message: &str) {
-        if self.get_severity() <= Severity::Debug {
+        if self.severity() <= Severity::Debug {
             self.log_message(Severity::Debug, message);
         }
     }
 
     pub fn info(&self, message: &str) {
-        if self.get_severity() <= Severity::Info {
+        if self.severity() <= Severity::Info {
             self.log_message(Severity::Info, message);
         }
     }
 
     pub fn warn(&self, message: &str) {
-        if self.get_severity() <= Severity::Warn {
+        if self.severity() <= Severity::Warn {
             self.log_message(Severity::Warn, message);
         }
     }
 
     pub fn error(&self, message: &str) {
-        if self.get_severity() <= Severity::Error {
+        if self.severity() <= Severity::Error {
             self.log_message(Severity::Error, message);
         }
     }
 
     pub fn fatal(&self, message: &str) {
-        if self.get_severity() <= Severity::Fatal {
+        if self.severity() <= Severity::Fatal {
             self.log_message(Severity::Fatal, message);
         }
     }
@@ -239,7 +239,7 @@ impl LogMessage {
             non_colorized: None,
             prefix: prefix.to_string(),
             severity_string: format!("[{}]", severity),
-            severity_color: severity.get_color(),
+            severity_color: severity.color(),
             message: message.to_string()
         }
     }
@@ -257,6 +257,7 @@ impl LogMessage {
             Some(ref s) => s.clone(),
             None => {
                 let severity_string = self.severity_color.colorize(&self.severity_string);
+                
                 self.colorized = Some(format!(
                     "{}{} {}\n",
                     self.prefix, severity_string, self.message
@@ -293,7 +294,7 @@ pub enum Severity {
 }
 
 impl Severity {
-    pub fn get_color(&self) -> ANSIColor {
+    pub fn color(&self) -> ANSIColor {
         match self {
             Severity::Debug => ANSIColor::Cyan,
             Severity::Info =>  ANSIColor::Green,
@@ -345,7 +346,7 @@ pub enum ANSIColor {
 }
 
 impl ANSIColor {
-    pub fn starter_sequence(&self) -> &str {
+    pub fn sgr_sequence(&self) -> &str {
         match self {
             ANSIColor::Black =>         "\x1b[30m",
             ANSIColor::Red =>           "\x1b[31m",
@@ -370,7 +371,7 @@ impl ANSIColor {
     /// Add color to existing string.
     #[cfg(not(target_os = "windows"))]
     pub fn colorize(&self, string: &str) -> String {
-        format!("{}{}{}", self.starter_sequence(), string, ANSIColor::Reset.starter_sequence())
+        format!("{}{}{}", self.sgr_sequence(), string, ANSIColor::Reset.sgr_sequence())
     }
 
     /// Add color to existing string.
@@ -383,16 +384,13 @@ impl ANSIColor {
             _ => {}
         }
 
-        format!("{}{}{}", self.starter_sequence(), string, ANSIColor::Reset.starter_sequence())
+        format!("{}{}{}", self.sgr_sequence(), string, ANSIColor::Reset.sgr_sequence())
     }
 }
 
 #[cfg(target_os = "windows")]
 fn enable_ansi_support() -> Result<(), u32> {
-    use std::ffi::OsStr;
-    use std::iter::once;
     use std::os::windows::ffi::OsStrExt;
-    use std::ptr::null_mut;
     use winapi::um::consoleapi::{GetConsoleMode, SetConsoleMode};
     use winapi::um::errhandlingapi::GetLastError;
     use winapi::um::fileapi::{CreateFileW, OPEN_EXISTING};
@@ -402,15 +400,20 @@ fn enable_ansi_support() -> Result<(), u32> {
     const ENABLE_VIRTUAL_TERMINAL_PROCESSING: u32 = 0x0004;
     
     unsafe {
-        let console_out_name: Vec<u16> = OsStr::new("CONOUT$").encode_wide().chain(once(0)).collect();
+        let console_out_name: Vec<u16> = 
+            std::ffi::OsStr::new("CONOUT$")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        
         let console_handle = CreateFileW(
             console_out_name.as_ptr(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_WRITE,
-            null_mut(),
+            std::ptr::null_mut(),
             OPEN_EXISTING,
             0,
-            null_mut(),
+            std::ptr::null_mut(),
         );
 
         if console_handle == INVALID_HANDLE_VALUE {
