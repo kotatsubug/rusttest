@@ -5,21 +5,21 @@ use std::collections::HashMap;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("Failed to load resource {}", name)]
+    #[error("failed to load resource '{}'", name)]
     ResourceLoadError {
         name: String,
         inner: crate::resource::Error
     },
-    #[error("Can not determine shader type for resource {}", name)]
-    CanNotDetermineShaderTypeForResource {
+    #[error("unknown shader type for resource '{}'", name)]
+    UnknownShaderTypeForResource {
         name: String
     },
-    #[error("Failed to compile shader {}: {}", name, message)]
+    #[error("failed to compile shader '{}': {}", name, message)]
     CompileError {
         name: String,
         message: String
     },
-    #[error("Failed to link program {}: {}", name, message)]
+    #[error("failed to link program '{}': {}", name, message)]
     LinkError {
         name: String,
         message: String
@@ -232,7 +232,7 @@ impl Shader {
             .iter()
             .find(|&&(file_extension, _)| name.ends_with(file_extension))
             .map(|&(_, kind)| kind)
-            .ok_or_else(|| Error::CanNotDetermineShaderTypeForResource { name: name.into() })?;
+            .ok_or_else(|| Error::UnknownShaderTypeForResource { name: name.into() })?;
         
         let source = res.load_cstring(name).map_err(|e| Error::ResourceLoadError {
             name: name.into(),

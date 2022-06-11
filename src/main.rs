@@ -6,6 +6,7 @@ extern crate glam;
 
 pub mod gfx;
 pub mod math;
+pub mod system;
 pub mod resource;
 pub mod log;
 
@@ -26,7 +27,7 @@ extern "system" fn gl_debug_message_callback(
     }
 }
 
-fn main() {
+fn run() {
     match LOGGER().a.set_log_path("debug.log") {
         Err(e) => LOGGER().a.error(&e),
         _ => {}
@@ -98,15 +99,15 @@ fn main() {
         0, 1, 2
     ];
     let mesh = gfx::Mesh::new(vertices, indices);
-    let transforms: Vec<glam::Mat4> = vec![
+    let mut transforms: Vec<glam::Mat4> = vec![
         glam::Mat4::IDENTITY,
     ];
 
-    let batch = gfx::Batch::new(program.id(), mesh, transforms).unwrap();
+    let batch = gfx::Batch::new(program.id(), mesh, transforms.clone()).unwrap();
 
     let view: glam::Mat4 = glam::Mat4::IDENTITY;
     let projection: glam::Mat4 = glam::Mat4::IDENTITY;
-
+    
     let mut event_pump = sdl.event_pump().unwrap();
     'main_loop: loop {
         for event in event_pump.poll_iter() {
@@ -133,8 +134,39 @@ fn main() {
 
         batch.draw();
 
+        //transforms[0].col(3)[0] = 0.001;
+        //batch.set_transform(0, transforms[0]);
+
         window.gl_swap_window();
     }
     
     LOGGER().a.flush().unwrap();
+}
+
+fn main() {
+    let r = std::panic::catch_unwind(|| {
+        run();
+    });
+
+    let r_str: Option<String> = match r {
+        Ok(_) => None,
+        Err(e) => {
+            let panic_info = match e.downcast::<String>() {
+                Ok(v) => *v,
+                Err(e) => match e.downcast::<&str>() {
+                    Ok(v) => v.to_string(),
+                    _ => "Unknown source of error".to_owned(),
+                }
+            };
+
+            Some(format!("{}\n", panic_info).to_string())
+        },
+    };
+    
+    if r_str.is_some() {
+        match system::windows::create_message_box("Engine Error", &r_str.unwrap(), system::windows::IconType::None) {
+            Err(e) => { LOGGER().a.error(format!("{}", &e).as_str()); },
+            _ => {},
+        }
+    }
 }

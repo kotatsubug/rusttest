@@ -159,7 +159,7 @@ impl Batch {
                 3,
                 gl::FLOAT,
                 gl::FALSE,
-                (6 * std::mem::size_of::<f32>()) as gl::types::GLsizei,  // NOTE:  May need to be 3, not 6.
+                (6 * std::mem::size_of::<f32>()) as gl::types::GLsizei,
                 std::ptr::null(),
             );
             gl::VertexAttribPointer(
@@ -167,7 +167,7 @@ impl Batch {
                 3,
                 gl::FLOAT,
                 gl::FALSE,
-                (6 * std::mem::size_of::<f32>()) as gl::types::GLsizei,  // NOTE:  May need to be 3, not 6.
+                (6 * std::mem::size_of::<f32>()) as gl::types::GLsizei,
                 (3 * std::mem::size_of::<f32>()) as *const gl::types::GLvoid,
             );
 
