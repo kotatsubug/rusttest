@@ -33,37 +33,46 @@ fn run() {
         _ => {}
     }
 
-    let sdl = sdl2::init().unwrap();
-    let video_subsys = sdl.video().unwrap();
+    let res = resource::Resource::from_relative_exe_path(std::path::Path::new("assets")).unwrap();
 
+    let sdl = sdl2::init().expect("could not initialize SDL");
+    let video_subsys = sdl.video().expect("could not initialize SDL video subsystem");
+    
+    let mut input = system::InputDevice::new(&sdl);
+    
     let gl_attr = video_subsys.gl_attr();
-
     gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
     gl_attr.set_context_version(4, 3);
+    gl_attr.set_accelerated_visual(true);
+    gl_attr.set_double_buffer(true);
 
     let window = video_subsys
         .window("WINDOW_TITLE", 640, 480)
         .opengl()
         .resizable()
+        .allow_highdpi()
         .build()
-        .unwrap();
+        .expect("could not build SDL window");
     
-    let _gl_context = window.gl_create_context().unwrap();
+    let _gl_context = window.gl_create_context().expect("could not create OpenGL context for SDL window");
     let _gl = gl::load_with(|s| video_subsys.gl_get_proc_address(s) as *const _);
+
+    let vsync = false;
+    video_subsys.gl_set_swap_interval(if vsync { 1 } else { 0 });
     
     let mut vendor_info: String = "".to_owned();
     vendor_info.push_str(
-        unsafe {
-            std::ffi::CStr::from_ptr(gl::GetString(gl::VENDOR) as *const i8).to_str().unwrap()
-        }
+        unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VENDOR) as *const i8).to_str().unwrap() }
     );
     vendor_info.push_str(" ");
     vendor_info.push_str(
-        unsafe {
-            std::ffi::CStr::from_ptr(gl::GetString(gl::RENDERER) as *const i8).to_str().unwrap()
-        }
+        unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::RENDERER) as *const i8).to_str().unwrap() }
     );
     LOGGER().a.info(&vendor_info);
+    let gl_version_info: String = 
+        unsafe { std::ffi::CStr::from_ptr(gl::GetString(gl::VERSION) as *const i8).to_str().unwrap().to_string() };
+    LOGGER().a.info(format!("using OpenGL version {}", &gl_version_info).as_str());
+    LOGGER().a.info(format!("using SDL2 version {}", sdl2::version::version().to_string()).as_str());
 
     unsafe {
         gl::Enable(gl::DEBUG_OUTPUT);
@@ -78,7 +87,6 @@ fn run() {
         gl::ClearColor(0.3, 0.3, 0.5, 1.0);
     }
 
-    let res = resource::Resource::from_relative_exe_path(std::path::Path::new("assets")).unwrap();
     let program = gfx::Program::from_res(&res, "shaders/test").unwrap();
 
     let vertices: Vec<gfx::Vertex> = vec![
@@ -103,18 +111,25 @@ fn run() {
         glam::Mat4::IDENTITY,
     ];
 
-    let batch = gfx::Batch::new(program.id(), mesh, transforms.clone()).unwrap();
+    let mut batch = gfx::Batch::new(program.id(), mesh, transforms.clone()).unwrap();
 
     let view: glam::Mat4 = glam::Mat4::IDENTITY;
     let projection: glam::Mat4 = glam::Mat4::IDENTITY;
     
-    let mut event_pump = sdl.event_pump().unwrap();
+    let mut event_pump = sdl.event_pump()
+        .expect("attempted to obtain SDL event pump when an EventPump instance already exists");
     'main_loop: loop {
         for event in event_pump.poll_iter() {
             match event {
                 sdl2::event::Event::Quit {..} => {
                     break 'main_loop;
-                }
+                },
+                sdl2::event::Event::KeyDown {
+                    scancode: Some(sdl2::keyboard::Scancode::C),
+                    ..
+                } => {
+                    LOGGER().a.debug("Test");
+                },
                 sdl2::event::Event::Window { win_event: sdl2::event::WindowEvent::Resized(w, h), .. } => {
                     viewport.update_size(w, h);
                     viewport.use_viewport();
@@ -122,6 +137,9 @@ fn run() {
                 _ => {},
             }
         }
+
+        input.process_keymap(&event_pump);
+        input.process_mousemap(&event_pump);
 
         unsafe {
             gl::Clear(gl::COLOR_BUFFER_BIT);
@@ -134,8 +152,8 @@ fn run() {
 
         batch.draw();
 
-        //transforms[0].col(3)[0] = 0.001;
-        //batch.set_transform(0, transforms[0]);
+        transforms[0].col(3)[1] = 5.0;
+        batch.set_transform(0, transforms[0]);
 
         window.gl_swap_window();
     }
@@ -143,7 +161,9 @@ fn run() {
     LOGGER().a.flush().unwrap();
 }
 
-fn main() {
+fn main() -> Result<(), String> {
+    let _args: Vec<_> = std::env::args().collect();
+
     let r = std::panic::catch_unwind(|| {
         run();
     });
@@ -162,11 +182,13 @@ fn main() {
             Some(format!("{}\n", panic_info).to_string())
         },
     };
-    
+
     if r_str.is_some() {
-        match system::windows::create_message_box("Engine Error", &r_str.unwrap(), system::windows::IconType::None) {
+        match system::windows::create_message_box("Engine Panic", &r_str.unwrap(), system::windows::IconType::None) {
             Err(e) => { LOGGER().a.error(format!("{}", &e).as_str()); },
             _ => {},
         }
     }
+
+    Ok(())
 }
