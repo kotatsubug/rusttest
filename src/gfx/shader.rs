@@ -41,7 +41,7 @@ struct UniformInfo {
 }
 
 impl Program {
-    pub fn from_res(res: &Resource, name: &str) -> Result<Program, Error> {
+    pub fn from_res(res: &Resource, name: &str) -> Result<Self, Error> {
         const POSSIBLE_EXTENSIONS: [&str; 2] = [".vert", ".frag"];
 
         let resource_names = POSSIBLE_EXTENSIONS
@@ -60,7 +60,7 @@ impl Program {
         })
     }
 
-    pub fn from_shaders(shaders: &[Shader]) -> Result<Program, String> {
+    pub fn from_shaders(shaders: &[Shader]) -> Result<Self, String> {
         let program_id = unsafe { gl::CreateProgram() };
         
         for shader in shaders {
@@ -224,7 +224,7 @@ impl Drop for Program {
 }
 
 impl Shader {
-    pub fn from_res(res: &Resource, name: &str) -> Result<Shader, Error> {
+    pub fn from_res(res: &Resource, name: &str) -> Result<Self, Error> {
         const POSSIBLE_EXTENSIONS: [(&str, gl::types::GLenum); 2] = 
             [(".vert", gl::VERTEX_SHADER), (".frag", gl::FRAGMENT_SHADER)];
 

@@ -17,7 +17,7 @@ pub struct f32_f32_f32 {
 }
 
 impl f32_f32_f32 {
-    pub fn new(d0: f32, d1: f32, d2: f32) -> f32_f32_f32 {
+    pub fn new(d0: f32, d1: f32, d2: f32) -> Self {
         f32_f32_f32{ d0, d1, d2 }
     }
 }
@@ -42,7 +42,7 @@ pub struct Mesh {
 }
 
 impl Mesh {
-    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Mesh {
+    pub fn new(vertices: Vec<Vertex>, indices: Vec<u32>) -> Self {
         Mesh{
             vertices: vertices,
             indices: indices,
@@ -104,7 +104,7 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn new(program: gl::types::GLuint, mesh: Mesh, transforms: Vec<glam::Mat4>) -> Result<Batch, Error> {
+    pub fn new(program: gl::types::GLuint, mesh: Mesh, transforms: &Vec<glam::Mat4>) -> Result<Self, Error> {
         // TODO: probably a cleaner way, maybe by borrowing Program
         unsafe {
             gl::UseProgram(program);
@@ -227,7 +227,7 @@ impl Batch {
         Ok(Batch {
             program_id: program,
             mesh: mesh,
-            transforms: transforms,
+            transforms: transforms.to_vec(),
 
             draw_commands: draw_commands,
             vao: vao,

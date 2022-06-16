@@ -3,14 +3,12 @@ use std::collections::HashSet;
 use crate::log::LOGGER;
 
 /// Handler containing all SDL states needed to process inputs.
-/// 
-/// Explicit lifetime is to prevent cloning of `keys` HashMap entry key `Keycode`s every time a key is pressed, 
-/// and should live as long as the current SDL instance.
 pub struct InputDevice {
     game_controller: Option<sdl2::controller::GameController>,
     //joystick: Option<sdl2::joystick::Joystick>,
     //haptic: Option<sdl2::haptic::Haptic>,
 
+    // List of keys and buttons; use HashSet instead of Vec to guarantee no duplicates
     keys_prev: HashSet<sdl2::keyboard::Keycode>,
     keys_old: HashSet<sdl2::keyboard::Keycode>,
     keys_new: HashSet<sdl2::keyboard::Keycode>,
@@ -19,8 +17,8 @@ pub struct InputDevice {
     mouse_buttons_old: HashSet<sdl2::mouse::MouseButton>,
     mouse_buttons_new: HashSet<sdl2::mouse::MouseButton>,
 
-    mouse_pos: (i32, i32),
-    mouse_pos_last: (i32, i32),
+    mouse_pos_prev: (i32, i32),
+    mouse_pos_new: (i32, i32),
     mouse_offset: (i32, i32),
 }
 
@@ -39,8 +37,8 @@ impl InputDevice {
             mouse_buttons_old: HashSet::new(),
             mouse_buttons_new: HashSet::new(),
 
-            mouse_pos: (0, 0),
-            mouse_pos_last: (0, 0),
+            mouse_pos_prev: (0, 0),
+            mouse_pos_new: (0, 0),
             mouse_offset: (0, 0),
         }
     }
@@ -55,11 +53,6 @@ impl InputDevice {
         
         self.keys_new = &keys - &self.keys_prev;
         self.keys_old = &self.keys_prev - &keys;
-
-        if !self.keys_new.is_empty() || !self.keys_old.is_empty() {
-            LOGGER().a.debug(format!("new_keys: {:?}\told_keys:{:?}", self.keys_new, self.keys_old).as_str());
-        }
-
         self.keys_prev = keys;
     }
     
@@ -81,9 +74,27 @@ impl InputDevice {
         }
 
         self.mouse_buttons_prev = mouse_buttons;
+        
+        // Mouse position
+        self.mouse_pos_new = (mouse_state.x(), mouse_state.y());
+        self.mouse_offset = (self.mouse_pos_new.0 - self.mouse_pos_prev.0, self.mouse_pos_prev.1 - self.mouse_pos_new.1);
+        
+        if self.mouse_pos_new != self.mouse_pos_prev {
+            LOGGER().a.debug(
+                format!(
+                    "[{},{}]",
+                    &(self.mouse_offset.0).to_string(),
+                    &(self.mouse_offset.1).to_string()
+                ).as_str()
+            );
+        }
 
-        //self.moffset = (self.mpos.0 - self.mpos_last.0, self.mpos_last.1 - self.mpos.1);
-        //self.mpos_last = (self.mpos.0, self.mpos.1);
+        self.mouse_pos_prev = self.mouse_pos_new;
+    }
+
+    #[inline(always)]
+    pub fn is_key_down(&mut self, keycode: &sdl2::keyboard::Keycode) -> bool {
+        self.keys_prev.contains(keycode)
     }
 
     fn init_controller(sdl_ctx: &sdl2::Sdl) -> Option<sdl2::controller::GameController> {
@@ -122,7 +133,7 @@ impl InputDevice {
                 Some(c)
             },
             None => {
-                LOGGER().a.error("couldn't open any controller!");
+                LOGGER().a.warn("couldn't open any controller!");
                 None
             }
         }

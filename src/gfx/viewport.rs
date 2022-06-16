@@ -7,7 +7,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
-    pub fn make_viewport(width: i32, height: i32) -> Viewport {
+    pub fn make_viewport(width: i32, height: i32) -> Self {
         Viewport { x: 0, y: 0, width, height }
     }
 
