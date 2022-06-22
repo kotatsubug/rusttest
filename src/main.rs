@@ -11,6 +11,7 @@ pub mod resource;
 pub mod log;
 
 use log::LOGGER;
+use math::AffineTransform;
 
 extern "system" fn gl_debug_message_callback(
     source: u32, ty: u32, id: u32, severity: u32, length: i32,
@@ -134,12 +135,17 @@ fn run() {
     let mut batch = gfx::Batch::new(program.id(), mesh, &transforms).unwrap();
     
     let mut view: glam::Mat4 = glam::Mat4::IDENTITY;
-    let mut projection: glam::Mat4 = glam::Mat4::perspective_lh(90.0, viewport.width as f32 / viewport.height as f32, 0.01, 100.0);
-    let mut camera_transform = math::affine::AffineTransform {
-        position: glam::vec3(0.0, 0.0, -1.0),
-        rotation: glam::Quat::from_axis_angle(glam::vec3(0.0, 1.0, 0.0), 0.0),
-        scale: glam::vec3(0.0, 0.0, 0.0),
-    };
+    let mut projection: glam::Mat4 = glam::Mat4::perspective_lh(
+        90.0,
+        viewport.width as f32 / viewport.height as f32,
+        0.01,
+        100.0
+    );
+    let mut camera_transform = AffineTransform::new(
+        glam::vec3(0.0, 0.0, -1.0),
+        glam::Quat::from_axis_angle(glam::vec3(0.0, 1.0, 0.0), 0.0),
+        glam::vec3(0.0, 0.0, 0.0),
+    );
     let mut camera = gfx::Camera::new(view, projection, camera_transform, glam::vec3(0.0, 1.0, 0.0));
     
     let mut event_pump = sdl.event_pump()
@@ -153,6 +159,13 @@ fn run() {
                 sdl2::event::Event::Window { win_event: sdl2::event::WindowEvent::Resized(w, h), .. } => {
                     viewport.update_size(w, h);
                     viewport.use_viewport();
+                    
+                    camera.projection = glam::Mat4::perspective_lh(
+                        90.0,
+                        viewport.width as f32 / viewport.height as f32,
+                        0.01,
+                        100.0
+                    );
                 }
                 _ => {},
             }
