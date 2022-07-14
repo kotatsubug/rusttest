@@ -9,7 +9,9 @@ pub mod math;
 pub mod system;
 pub mod resource;
 pub mod log;
+pub mod world;
 
+use world::*;
 use log::LOGGER;
 use math::AffineTransform;
 
@@ -148,6 +150,33 @@ fn run() {
     );
     let mut camera = gfx::Camera::new(view, projection, camera_transform, glam::vec3(0.0, 1.0, 0.0));
     
+    // Just some testing here real quick
+    let mut world = World::new();
+    let icarus_entity = world.new_entity();
+    world.add_component_to_entity(icarus_entity, Name("Icarus"));
+    world.add_component_to_entity(icarus_entity, Health(-10));
+    let perseus_entity = world.new_entity();
+    world.add_component_to_entity(perseus_entity, Name("Perseus"));
+    world.add_component_to_entity(perseus_entity, Health(-30));
+    let zeus_entity = world.new_entity();
+    world.add_component_to_entity(zeus_entity, Name("Zeus"));
+    
+    let mut healths = world.borrow_component_vec_mut::<Health>().unwrap();
+    let mut names = world.borrow_component_vec_mut::<Name>().unwrap();
+    let zip = healths.iter_mut().zip(names.iter_mut());
+    let iter = zip.filter_map(|(health, name)| Some((health.as_mut()?, name.as_mut()?)));
+    
+    for (health, name) in iter {
+        if health.0 < 0 {
+            println!("{} has perished", name.0);
+        }
+
+        if name.0 == "Perseus" && health.0 <= 0 {
+            *health = Health(100);
+            println!("Revive!");
+        }
+    }
+
     let mut event_pump = sdl.event_pump()
         .expect("attempted to obtain SDL event pump when an EventPump instance already exists");
     'main_loop: loop {
@@ -222,7 +251,7 @@ fn main() -> Result<(), String> {
                 Ok(v) => *v,
                 Err(e) => match e.downcast::<&str>() {
                     Ok(v) => v.to_string(),
-                    _ => "Unknown source of error".to_owned(),
+                    _ => "Uncaught error source".to_owned(),
                 }
             };
 
