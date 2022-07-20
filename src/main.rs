@@ -9,18 +9,18 @@ pub mod math;
 pub mod system;
 pub mod resource;
 pub mod log;
-pub mod world;
+pub mod logic;
 
-use world::*;
+use logic::*;
 use log::LOGGER;
-use math::AffineTransform;
+
+use crate::math::isometry::TransformEuler;
 
 extern "system" fn gl_debug_message_callback(
     source: u32, ty: u32, id: u32, severity: u32, length: i32,
     message: *const std::os::raw::c_char, user_param: *mut std::os::raw::c_void)
 {
     let _ = (source, ty, id, severity, user_param);
-
     match severity {
         gl::DEBUG_SEVERITY_HIGH | gl::DEBUG_SEVERITY_MEDIUM | gl::DEBUG_SEVERITY_LOW => {
             unsafe {
@@ -63,6 +63,9 @@ fn run() {
     gl_attr.set_context_version(4, 3);
     gl_attr.set_accelerated_visual(true);
     gl_attr.set_double_buffer(true);
+    
+    sdl.mouse().show_cursor(false);
+    sdl.mouse().set_relative_mouse_mode(true);
 
     let window = video_subsys
         .window("WINDOW_TITLE", 640, 480)
@@ -143,38 +146,27 @@ fn run() {
         0.01,
         100.0
     );
-    let mut camera_transform = AffineTransform::new(
+    let mut camera_transform = TransformEuler::new(
         glam::vec3(0.0, 0.0, -1.0),
-        glam::Quat::from_axis_angle(glam::vec3(0.0, 1.0, 0.0), 0.0),
-        glam::vec3(0.0, 0.0, 0.0),
+        glam::vec3(0.0, std::f32::consts::PI / 2.0, 0.0),
     );
     let mut camera = gfx::Camera::new(view, projection, camera_transform, glam::vec3(0.0, 1.0, 0.0));
     
     // Just some testing here real quick
     let mut world = World::new();
-    let icarus_entity = world.new_entity();
-    world.add_component_to_entity(icarus_entity, Name("Icarus"));
-    world.add_component_to_entity(icarus_entity, Health(-10));
-    let perseus_entity = world.new_entity();
-    world.add_component_to_entity(perseus_entity, Name("Perseus"));
-    world.add_component_to_entity(perseus_entity, Health(-30));
-    let zeus_entity = world.new_entity();
-    world.add_component_to_entity(zeus_entity, Name("Zeus"));
-    
-    let mut healths = world.borrow_component_vec_mut::<Health>().unwrap();
-    let mut names = world.borrow_component_vec_mut::<Name>().unwrap();
-    let zip = healths.iter_mut().zip(names.iter_mut());
-    let iter = zip.filter_map(|(health, name)| Some((health.as_mut()?, name.as_mut()?)));
-    
-    for (health, name) in iter {
-        if health.0 < 0 {
-            println!("{} has perished", name.0);
-        }
-
-        if name.0 == "Perseus" && health.0 <= 0 {
-            *health = Health(100);
-            println!("Revive!");
-        }
+    #[derive(Debug)] struct Name(String);
+    #[derive(Debug)] struct Health(i32);
+    let ent0 = world.spawn((Name("Matsumoto".to_string()), Health(100)));
+    let mut query = world.query::<(&Name, &Health)>().unwrap();
+    for (name, health) in query.iter() {
+        LOGGER().a.debug(
+            format!(
+                "[{:?}] -> {:?}, {:?}",
+                ent0.index,
+                name,
+                health
+            ).as_str()
+        );
     }
 
     let mut event_pump = sdl.event_pump()
@@ -219,17 +211,34 @@ fn run() {
         batch.draw();
 
         if input.is_key_down(&sdl2::keyboard::Keycode::W) {
-            camera.transform.position.z += 0.0004;
+            camera.translate_forward(0.0004);
         }
         if input.is_key_down(&sdl2::keyboard::Keycode::S) {
-            camera.transform.position.z -= 0.0004;
+            camera.translate_forward(-0.0004);
         }
         if input.is_key_down(&sdl2::keyboard::Keycode::A) {
-            camera.transform.position.x -= 0.0004;
+            camera.translate_left(0.0004);
         }
         if input.is_key_down(&sdl2::keyboard::Keycode::D) {
-            camera.transform.position.x += 0.0004;
+            camera.translate_left(-0.0004);
         }
+        if input.is_key_down(&sdl2::keyboard::Keycode::Q) {
+            camera.rotate(glam::vec3(0.0, 0.001, 0.0));
+        }
+        if input.is_key_down(&sdl2::keyboard::Keycode::E) {
+            camera.rotate(glam::vec3(0.0, -0.001, 0.0));
+        }
+        if input.is_key_down(&sdl2::keyboard::Keycode::Z) {
+            camera.rotate(glam::vec3(0.001, 0.0, 0.0));
+        }
+        if input.is_key_down(&sdl2::keyboard::Keycode::X) {
+            camera.rotate(glam::vec3(-0.001, 0.0, 0.0));
+        }
+        
+        let moffset = input.mouse_rel_offset();
+        camera.rotate(glam::vec3(moffset.1 as f32 * -0.01, moffset.0 as f32 * -0.01, 0.0));
+
+        LOGGER().a.debug(format!("{}", camera.transform.euler_rotation).as_str());
 
         camera.update_view();
 

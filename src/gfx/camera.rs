@@ -1,14 +1,14 @@
-use crate::math::affine::AffineTransform;
+use crate::math::isometry::TransformEuler;
 
 pub struct Camera {
     pub view: glam::Mat4,
     pub projection: glam::Mat4,
-    pub transform: AffineTransform,
-    // program?
+    pub transform: TransformEuler,
+    // TODO: specific program variable for rendering?
 
     /// 3D camera vectors used for calculating the current 
-    /// view matrix in conjunction with camera rotation
-    ///                                                 
+    /// view matrix in conjunction with camera rotation.
+    /// ```
     ///             ^              ^                    
     ///          up |              | worldup (immutable)
     ///          ___|______        |                    
@@ -20,6 +20,7 @@ pub struct Camera {
     ///          / front                                
     ///         v                                       
     ///                                                 
+    /// ```
     front: glam::Vec3,
     right: glam::Vec3,
     up: glam::Vec3,
@@ -30,16 +31,17 @@ impl Camera {
     pub fn new(
         view_: glam::Mat4,
         projection_: glam::Mat4,
-        transform_: AffineTransform,
+        transform_: TransformEuler,
         worldup_: glam::Vec3
     ) -> Self {
-        
-        // TODO: generalize this and update fn
-        let up = glam::const_vec3!([ 0.0, 0.0, 1.0 ]);
-        // TODO: faster to rotate the axes instead of cross product?
-        let front_ = (transform_.rotation.mul_vec3(up)).normalize();
-        let right_ = (front_.cross(worldup_)).normalize();
-        let up_ = (right_.cross(front_)).normalize();
+        let updated_vec = glam::vec3(
+            f32::cos(transform_.euler_rotation.y) * f32::cos(transform_.euler_rotation.x),
+            f32::sin(transform_.euler_rotation.x),
+            f32::sin(transform_.euler_rotation.y) * f32::cos(transform_.euler_rotation.x),
+        );
+        let front_ = glam::Vec3::normalize(updated_vec);
+        let right_ = glam::Vec3::normalize(front_.cross(worldup_));
+        let up_ = glam::Vec3::normalize(right_.cross(front_));
 
         Camera {
             view: view_,
@@ -58,14 +60,48 @@ impl Camera {
         self.view = glam::Mat4::look_at_lh(self.transform.position, target, self.up);
         self.update_camera_vectors();
     }
-
+    
     fn update_camera_vectors(&mut self) {
-        // Vector to rotate into place for getting the camera front (normal)
-        // (0,0,1) for LH (OpenGL), (0,0,-1) for RH coordinate systems.
-        let no_angle = glam::const_vec3!([ 0.0, 0.0, 1.0 ]);
-        // TODO: faster to rotate the axes instead of cross product?
-        self.front = (self.transform.rotation.mul_vec3(no_angle)).normalize();
-        self.right = (self.front.cross(self.worldup)).normalize();
-        self.up = (self.right.cross(self.front)).normalize();
+        let updated_vec = glam::vec3(
+            f32::cos(self.transform.euler_rotation.y) * f32::cos(self.transform.euler_rotation.x),
+            f32::sin(self.transform.euler_rotation.x),
+            f32::sin(self.transform.euler_rotation.y) * f32::cos(self.transform.euler_rotation.x),
+        ); // direction the camera is currently facing, unnormalized
+        self.front = glam::Vec3::normalize(updated_vec);
+        self.right = glam::Vec3::normalize(self.front.cross(self.worldup));
+        self.up = glam::Vec3::normalize(self.right.cross(self.front));
+    }
+
+    pub fn translate_forward(&mut self, dist: f32) {
+        self.transform.position += self.front * dist;
+    }
+
+    pub fn translate_left(&mut self, dist: f32) {
+        self.transform.position += self.right * dist;
+    }
+
+    pub fn translate_up(&mut self, dist: f32) {
+        self.transform.position += self.up * dist;
+    }
+
+    /// Adds an euler rotation to current transform rotation.
+    /// This should be used instead of accessing `transform.euler_rotation` because it also prevents overflow.
+    pub fn rotate(&mut self, euler: glam::Vec3) {
+        self.transform.euler_rotation += euler;
+        
+        // Constrain pitch to (-π/2, π/2)
+        // ε needed to remove weirdness since `front` can be flipped at ±π/2 pitch
+        if self.transform.euler_rotation.x > std::f32::consts::PI / 2.0 - f32::EPSILON {
+            self.transform.euler_rotation.x = std::f32::consts::PI / 2.0 - f32::EPSILON;
+        } else if self.transform.euler_rotation.x < -std::f32::consts::PI / 2.0 + f32::EPSILON {
+            self.transform.euler_rotation.x = -std::f32::consts::PI / 2.0 + f32::EPSILON;
+        }
+        
+        // Smooth wrap current yaw to [0, 2π)
+        // Use fmodulus trick so we can support rotations greater than 2π without snapping to 0 in constant time
+        self.transform.euler_rotation.y = 
+            (std::f32::consts::PI * 2.0 + 
+                (self.transform.euler_rotation.y % (std::f32::consts::PI * 2.0))
+            ) % (std::f32::consts::PI * 2.0);
     }
 }

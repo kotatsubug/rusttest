@@ -1,3 +1,1 @@
-pub mod affine;
-
-pub use affine::AffineTransform as AffineTransform;
+pub mod isometry;

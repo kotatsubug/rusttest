@@ -17,9 +17,8 @@ pub struct InputDevice {
     mouse_buttons_old: HashSet<sdl2::mouse::MouseButton>,
     mouse_buttons_new: HashSet<sdl2::mouse::MouseButton>,
 
-    mouse_pos_prev: (i32, i32),
-    mouse_pos_new: (i32, i32),
-    mouse_offset: (i32, i32),
+    mouse_pos: (i32, i32),
+    mouse_rel_offset: (i32, i32),
 }
 
 impl InputDevice {
@@ -37,9 +36,8 @@ impl InputDevice {
             mouse_buttons_old: HashSet::new(),
             mouse_buttons_new: HashSet::new(),
 
-            mouse_pos_prev: (0, 0),
-            mouse_pos_new: (0, 0),
-            mouse_offset: (0, 0),
+            mouse_pos: (0, 0),
+            mouse_rel_offset: (0, 0),
         }
     }
 
@@ -58,6 +56,7 @@ impl InputDevice {
     
     pub fn process_mousemap(&mut self, event_pump: &sdl2::EventPump) {
         let mouse_state = event_pump.mouse_state();
+        let relative_mouse_state = event_pump.relative_mouse_state();
         let mouse_buttons = mouse_state.pressed_mouse_buttons().collect();
 
         self.mouse_buttons_new = &mouse_buttons - &self.mouse_buttons_prev;
@@ -72,29 +71,23 @@ impl InputDevice {
                     self.mouse_buttons_old
             ).as_str());
         }
-
+        
         self.mouse_buttons_prev = mouse_buttons;
         
         // Mouse position
-        self.mouse_pos_new = (mouse_state.x(), mouse_state.y());
-        self.mouse_offset = (self.mouse_pos_new.0 - self.mouse_pos_prev.0, self.mouse_pos_prev.1 - self.mouse_pos_new.1);
-        
-        if self.mouse_pos_new != self.mouse_pos_prev {
-            LOGGER().a.debug(
-                format!(
-                    "[{},{}]",
-                    &(self.mouse_offset.0).to_string(),
-                    &(self.mouse_offset.1).to_string()
-                ).as_str()
-            );
-        }
-
-        self.mouse_pos_prev = self.mouse_pos_new;
+        self.mouse_pos = (mouse_state.x(), mouse_state.y());
+        self.mouse_rel_offset = (relative_mouse_state.x(), relative_mouse_state.y());
     }
 
-    #[inline(always)]
+    #[inline]
     pub fn is_key_down(&mut self, keycode: &sdl2::keyboard::Keycode) -> bool {
         self.keys_prev.contains(keycode)
+    }
+
+    /// Get mouse position change since the last call to `process_mousemap()`.
+    #[inline]
+    pub fn mouse_rel_offset(&mut self) -> (i32, i32) {
+        self.mouse_rel_offset
     }
 
     fn init_controller(sdl_ctx: &sdl2::Sdl) -> Option<sdl2::controller::GameController> {
